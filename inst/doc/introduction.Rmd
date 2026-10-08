@@ -1,0 +1,160 @@
+---
+title: "Introduction to ET0models (Temperature-Based)"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Introduction to ET0models}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 5
+)
+```
+
+## Overview
+
+The `ET0models` package provides 10 temperature-based empirical models for
+estimating daily reference evapotranspiration (ET0). The FAO Penman-Monteith
+method is included as the standard reference against which the temperature-based
+models are compared and evaluated.
+
+Temperature-based models are particularly valuable in data-scarce environments
+because they require only readily available temperature data (plus humidity,
+day of year, and location in some cases), unlike methods that require wind
+speed or solar radiation measurements.
+
+### Temperature-Based Models
+
+| # | Model | Function | Primary Inputs |
+|---|-------|----------|----------------|
+| 1 | Blaney-Criddle (1950) | `et0_blaney_criddle()` | Tmean |
+| 2 | Schendel (Bormann, 2011) | `et0_schendel()` | Tmean, RH |
+| 3 | Hargreaves-Samani (1985) | `et0_hargreaves_samani()` | Tmin, Tmax, J, lat |
+| 4 | Linacre (1977) | `et0_linacre()` | Tmean, Tmin, Tmax, RH, z, lat |
+| 5 | Tabari-Talaee 1 (2011) | `et0_tabari_talee1()` | Tmin, Tmax, J, lat |
+| 6 | Tabari-Talaee 2 (2011) | `et0_tabari_talee2()` | Tmin, Tmax, J, lat |
+| 7 | Droogers-Allen (2002) | `et0_droogers_allen()` | Tmin, Tmax, J, lat |
+| 8 | Berti et al. (2014) | `et0_berti()` | Tmin, Tmax, J, lat |
+| 9 | Dorji et al. (2016) | `et0_dorji()` | Tmin, Tmax, J, lat |
+| 10 | Baier-Robertson (1965) | `et0_baier_robertson()` | Tmin, Tmax, J, lat |
+
+## Quick Start
+
+### Loading the Package and Data
+
+```{r load}
+library(ET0TempModels)
+data(jhansi_weather)
+head(jhansi_weather)
+```
+
+### Computing ET0 for a Single Day
+
+```{r single-day}
+# FAO Penman-Monteith (reference)
+et0_fao_pm(Tmin = 15, Tmax = 30, RH_morning = 90, RH_evening = 40,
+           u2 = 1.5, n = 8, J = 172, lat = 25.43, z = 216)
+
+# Blaney-Criddle (needs only Tmean)
+et0_blaney_criddle(Tmean = 22.5)
+
+# Hargreaves-Samani (needs Tmin, Tmax, day of year, latitude)
+et0_hargreaves_samani(Tmin = 15, Tmax = 30, J = 172, lat = 25.43)
+```
+
+### Computing All 10 Temperature-Based Models at Once
+
+The `et0_temp_all()` function runs all 10 temperature-based models plus the
+FAO-PM reference in a single call:
+
+```{r all-models}
+result <- et0_temp_all(
+  Tmin       = jhansi_weather$Tmin[1:5],
+  Tmax       = jhansi_weather$Tmax[1:5],
+  RH_morning = jhansi_weather$RH_morning[1:5],
+  RH_evening = jhansi_weather$RH_evening[1:5],
+  u2         = jhansi_weather$WS[1:5],
+  n          = jhansi_weather$SSH[1:5],
+  J          = jhansi_weather$J[1:5],
+  lat        = 25.43,
+  z          = 216
+)
+round(result, 2)
+```
+
+## Evaluating Model Performance Against FAO-PM
+
+The package includes 9 statistical metrics for comparing temperature-based
+model performance against the FAO-PM reference: NSE, d, MSE, RMSE, NRMSE,
+MAE, MBE, r, and R-squared.
+
+```{r evaluation}
+# Compute ET0 for the full year
+full_result <- et0_temp_all(
+  Tmin       = jhansi_weather$Tmin,
+  Tmax       = jhansi_weather$Tmax,
+  RH_morning = jhansi_weather$RH_morning,
+  RH_evening = jhansi_weather$RH_evening,
+  u2         = jhansi_weather$WS,
+  n          = jhansi_weather$SSH,
+  J          = jhansi_weather$J,
+  lat        = 25.43,
+  z          = 216
+)
+
+# FAO-PM is the reference (observed)
+obs   <- full_result$FAO_PM
+preds <- full_result[, c("Blaney_Criddle", "Hargreaves_Samani",
+                          "Linacre", "Droogers_Allen")]
+metrics <- evaluate_models(obs, preds)
+print(metrics)
+```
+
+## Visualization
+
+### Scatter Plot
+
+```{r scatter, fig.width=6, fig.height=6}
+plot_scatter(obs, preds,
+             main = "Temperature-Based Models vs FAO-PM")
+```
+
+### Taylor Diagram
+
+```{r taylor, fig.width=7, fig.height=7}
+plot_taylor(obs, preds,
+            main = "Taylor Diagram - Temperature-Based Models")
+```
+
+## Helper Functions
+
+The package exports helper functions for computing intermediate meteorological
+variables used internally by the models:
+
+```{r helpers}
+# Extraterrestrial radiation for June 21 at 25.43 N
+extraterrestrial_radiation(J = 172, lat = 25.43)
+
+# Saturation vapor pressure at 25 degrees C
+saturation_vapor_pressure(25)
+
+# Daylight hours for June 21 at 25.43 N
+daylight_hours(J = 172, lat = 25.43)
+```
+
+## References
+
+- Allen, R.G., Pereira, L.S., Raes, D., & Smith, M. (1998). Crop
+  evapotranspiration: Guidelines for computing crop water requirements.
+  FAO Irrigation and Drainage Paper No. 56.
+- Satpute, A.N., Barman, S., Singh, A.K., Ghosh, A., & Gupta, G. (2026).
+  A multi-scale evaluation of 30 empirical models for reference
+  evapotranspiration estimation in a data-scarce semi-arid region:
+  A case study of Jhansi, India.
+  *Journal of Hydrology: Regional Studies*.
+  https://doi.org/10.1016/j.ejrh.2026.103925
